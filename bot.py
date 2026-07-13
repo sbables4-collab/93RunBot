@@ -88,8 +88,8 @@ and introduce yourself!
 ❤️ **What brought you to 93Run**
 
 Once you've posted your introduction,
-you'll automatically receive your **Member**
-role and unlock the rest of the community.
+you'll automatically receive your **Member** role
+and unlock the rest of the community.
 
 See you in the server!
 
@@ -102,7 +102,6 @@ See you in the server!
     except Exception as e:
 
         print(f"Couldn't DM {member}")
-
         print(e)
 
 # ======================================================
@@ -136,14 +135,11 @@ async def on_message(message):
     if existing:
 
         try:
-
             await message.delete()
-
         except:
             pass
 
         try:
-
             await message.author.send(
 """
 You have already posted your introduction.
@@ -154,7 +150,6 @@ please contact a staff member.
 🏃🖤
 """
             )
-
         except:
             pass
 
@@ -176,9 +171,7 @@ please contact a staff member.
     # React
 
     try:
-
         await message.add_reaction("👋")
-
     except:
         pass
 
@@ -192,14 +185,13 @@ please contact a staff member.
 
             await message.author.add_roles(role)
 
-            print(
-                f"Member role added to {message.author}"
-            )
+            print(f"Member role added to {message.author}")
 
         except Exception as e:
 
             print(e)
-                # ===========================================
+
+    # ===========================================
     # Confirmation DM
     # ===========================================
 
