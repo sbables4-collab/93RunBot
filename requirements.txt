@@ -11,3 +11,7 @@ propcache==0.4.1
 python-dotenv==1.2.1
 typing_extensions==4.16.0
 yarl==1.22.0
+easyocr
+opencv-python
+Pillow
+numpy
