@@ -47,6 +47,22 @@ bot = commands.Bot(
 )
 
 # ======================================================
+# LOAD COGS
+# ======================================================
+
+# ======================================================
+# LOAD COGS
+# ======================================================
+
+async def setup_hook():
+    await bot.load_extension("cogs.challenge")
+    await bot.load_extension("cogs.submissions")
+    await bot.load_extension("cogs.leaderboard")
+    await bot.load_extension("cogs.mystats")
+
+bot.setup_hook = setup_hook
+
+# ======================================================
 # READY
 # ======================================================
 
@@ -243,9 +259,7 @@ See you at the next run! 🏃🖤
 # ======================================================
 
 try:
-
     bot.run(TOKEN)
 
 finally:
-
     conn.close()
