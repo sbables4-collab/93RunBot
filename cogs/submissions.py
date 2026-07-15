@@ -1,5 +1,12 @@
 import discord
 from discord.ext import commands
+from cogs.utils.verifier import verify_workout
+
+from cogs.challenge_config import (
+    CHALLENGE_NAME,
+    CHALLENGE_START,
+    CHALLENGE_END,
+)
 
 from cogs.badges import check_badges
 from challenge_db import (
@@ -105,6 +112,69 @@ class SubmissionListener(commands.Cog):
             )
 
             return
+
+        # ==================================================
+        # OCR VERIFICATION
+        # ==================================================
+
+        ocr = await verify_workout(attachment.url)
+
+        if not ocr["success"]:
+
+            await message.reply(
+                "❌ I couldn't read the workout duration from your screenshot.\n\nPlease upload a clearer screenshot."
+            )
+
+            return
+
+        difference = abs(ocr["minutes"] - minutes)
+
+        if difference > 1:
+
+            await message.reply(
+                f"❌ Verification Failed\n\n"
+                f"You entered **{minutes} minutes**.\n"
+                f"Screenshot shows **{ocr['minutes']} minutes**."
+            )
+
+            return
+
+            # ==================================================
+            # DATE VERIFICATION
+            # ==================================================
+
+            if ocr["workout_date"] is None:
+
+                await message.reply(
+                    "❌ I couldn't read the workout date from your screenshot.\n\n"
+                    "Please upload a screenshot that clearly shows the workout date."
+                )
+
+                return
+
+            if (
+                ocr["workout_date"] < CHALLENGE_START
+                or
+                ocr["workout_date"] > CHALLENGE_END
+            ):
+
+                await message.reply(
+
+                    f"❌ Verification Failed\n\n"
+
+                    f"Workout Date: **{ocr['workout_date'].strftime('%B %d, %Y')}**\n\n"
+
+                    f"This workout is outside the **{CHALLENGE_NAME}** window.\n\n"
+
+                    f"Accepted Dates:\n"
+                    f"**{CHALLENGE_START.strftime('%B %d')}** "
+                    f"through "
+                    f"**{CHALLENGE_END.strftime('%B %d')}**"
+
+                )
+
+                return
+
 
         # ==================================================
         # SAVE VERIFICATION
