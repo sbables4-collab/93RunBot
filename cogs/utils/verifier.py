@@ -1,59 +1,44 @@
 import re
-import aiohttp
-import easyocr
-import numpy as np
-import cv2
-
 from datetime import datetime
 
-# ==========================================
-# OCR
-# ==========================================
+import aiohttp
+import cv2
+import easyocr
+import numpy as np
+
+# ======================================================
+# OCR READER
+# ======================================================
 
 reader = easyocr.Reader(
     ["en"],
     gpu=False,
 )
 
-
-# ==========================================
+# ======================================================
 # DOWNLOAD IMAGE
-# ==========================================
+# ======================================================
 
 async def download_image(url: str):
-
     async with aiohttp.ClientSession() as session:
-
         async with session.get(url) as response:
-
             if response.status != 200:
                 return None
 
             data = await response.read()
 
-    image = np.frombuffer(
-        data,
-        np.uint8,
-    )
-
-    image = cv2.imdecode(
-        image,
-        cv2.IMREAD_COLOR,
-    )
+    image = np.frombuffer(data, np.uint8)
+    image = cv2.imdecode(image, cv2.IMREAD_COLOR)
 
     return image
 
 
-# ==========================================
-# PREPROCESS
-# ==========================================
+# ======================================================
+# PREPROCESS IMAGE
+# ======================================================
 
 def preprocess(image):
-
-    gray = cv2.cvtColor(
-        image,
-        cv2.COLOR_BGR2GRAY,
-    )
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
     gray = cv2.GaussianBlur(
         gray,
@@ -69,217 +54,236 @@ def preprocess(image):
     )
 
     return thresh
-
-
-# ==========================================
+    # ======================================================
 # EXTRACT MINUTES
-# ==========================================
+# ======================================================
 
-def extract_minutes(text):
+def extract_minutes(results):
+    """
+    Extract workout duration from OCR results.
 
-    text = text.lower()
+    Priority:
+    1. Time field (Garmin)
+    2. Any Xm Ys format
+    3. XX min format
+    4. HH:MM:SS
+    5. MM:SS
+    """
 
-    #
-    # Look after the word "time"
-    #
+    # -----------------------------------------
+    # Check every OCR line individually
+    # -----------------------------------------
 
-    search_text = text
+    for _, text, _ in results:
 
-    if "time" in text:
-        search_text = text.split(
-            "time",
-            1,
-        )[1]
+        line = text.lower().strip()
 
-    #
-    # 15m 18s
-    #
+        # 15m 18s
+        match = re.search(
+            r"(\d{1,3})\s*m(?:in)?\s*(\d{1,2})?\s*s",
+            line,
+        )
 
+        if match:
+            return int(match.group(1))
+
+        # 60 min
+        match = re.search(
+            r"(\d{1,3})\s*(?:min|mins|minute|minutes)$",
+            line,
+        )
+
+        if match:
+            return int(match.group(1))
+
+    # -----------------------------------------
+    # Fallback to combined OCR text
+    # -----------------------------------------
+
+    full_text = " ".join(
+        text.lower()
+        for _, text, _ in results
+    )
+
+    # Look specifically after the word "Time"
     match = re.search(
-        r"(\d{1,3})\s*m(?:in)?s?\s*(\d{1,2})?\s*s?",
-        search_text,
+        r"time.*?(\d{1,3})\s*m(?:in)?\s*(\d{1,2})?\s*s",
+        full_text,
+        re.IGNORECASE | re.DOTALL,
     )
 
     if match:
         return int(match.group(1))
 
-    #
-    # 60 min
-    #
-
-    match = re.search(
-        r"(\d{1,3})\s*(min|mins|minute|minutes)",
-        search_text,
-    )
-
-    if match:
-        return int(match.group(1))
-
-    #
-    # 1:15:18
-    #
-
+    # HH:MM:SS
     match = re.search(
         r"(\d{1,2}):(\d{2}):(\d{2})",
-        search_text,
+        full_text,
     )
 
     if match:
-
         hours = int(match.group(1))
         minutes = int(match.group(2))
 
         return hours * 60 + minutes
 
-    #
-    # 15:18
-    #
-
+    # MM:SS
     match = re.search(
         r"(\d{1,2}):(\d{2})",
-        search_text,
+        full_text,
     )
 
     if match:
         return int(match.group(1))
 
     return None
-    # ==========================================
-    # EXTRACT WORKOUT DATE
-    # ==========================================
+    # ======================================================
+# EXTRACT WORKOUT DATE
+# ======================================================
 
-    def extract_workout_date(text):
+def extract_workout_date(results):
+    """
+    Extract a workout date from OCR results.
 
-        #
-        # Garmin sometimes omits the space after commas.
-        #
+    Supports:
+    July 14, 2026
+    July 14,2026
+    Jul 14, 2026
+    Jul 14,2026
+    """
 
-        text = text.replace(",", ", ")
-
-        #
-        # Look for:
-        #
-        # July 14, 2026
-        # Jul 14, 2026
-        #
-
-        match = re.search(
-
-            r"(January|February|March|April|May|June|July|August|September|October|November|December|"
-            r"Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)"
-            r"\s+\d{1,2},?\s*\d{4}",
-
-            text,
-
-            re.IGNORECASE,
-
-        )
-
-        if not match:
-            return None
-
-        date_text = match.group(0)
-
-        #
-        # Normalize spacing
-        #
-
-        date_text = date_text.replace(",", ", ")
-
-        date_text = " ".join(date_text.split())
-
-        #
-        # Try full month first
-        #
-
-        try:
-
-            return datetime.strptime(
-                date_text,
-                "%B %d, %Y",
-            ).date()
-
-        except ValueError:
-            pass
-
-        #
-        # Try abbreviated month
-        #
-
-        try:
-
-            return datetime.strptime(
-                date_text,
-                "%b %d, %Y",
-            ).date()
-
-        except ValueError:
-            pass
-
-        return None
-
-
-    # ==========================================
-    # OCR CONFIDENCE
-    # ==========================================
-
-    def calculate_confidence(results):
-
-        if not results:
-            return 0
-
-        return round(
-
-            sum(result[2] for result in results)
-
-            / len(results),
-
-            2,
-
-        )
-        # ==========================================
-        # VERIFY WORKOUT
-        # ==========================================
-
-async def verify_workout(image_url):
-
-    # Download image
-    image = await download_image(image_url)
-
-    if image is None:
-        return {
-            "success": False,
-            "reason": "Unable to download image.",
-        }
-
-    # Preprocess image
-    processed = preprocess(image)
-
-    # OCR
-    results = reader.readtext(processed)
-
-    # Combine OCR text
     full_text = " ".join(
-        result[1]
-        for result in results
+        text for _, text, _ in results
     )
 
-    # Debug
-    print("\n========== OCR ==========")
-    print(full_text)
-    print("=========================\n")
+    # Normalize commas
+    full_text = re.sub(r",\s*", ", ", full_text)
 
-    # Extract data
-    minutes = extract_minutes(full_text)
-    workout_date = extract_workout_date(full_text)
+    pattern = (
+        r"(January|February|March|April|May|June|July|August|"
+        r"September|October|November|December|"
+        r"Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)"
+        r"\s+"
+        r"(\d{1,2})"
+        r",\s*"
+        r"(\d{4})"
+    )
 
-    # Confidence
-    confidence = calculate_confidence(results)
+    match = re.search(
+        pattern,
+        full_text,
+        re.IGNORECASE,
+    )
 
-    return {
-        "success": minutes is not None,
-        "minutes": minutes,
-        "workout_date": workout_date,
-        "confidence": confidence,
-        "text": full_text,
-    }
+    if not match:
+        return None
+
+    date_string = f"{match.group(1)} {match.group(2)}, {match.group(3)}"
+
+    for fmt in ("%B %d, %Y", "%b %d, %Y"):
+        try:
+            return datetime.strptime(
+                date_string,
+                fmt,
+            ).date()
+        except ValueError:
+            pass
+
+    return None
+
+
+# ======================================================
+# OCR CONFIDENCE
+# ======================================================
+
+def calculate_confidence(results):
+    """
+    Returns the average OCR confidence (0.00 - 1.00)
+    """
+
+    if not results:
+        return 0.0
+
+    scores = [
+        confidence
+        for _, _, confidence in results
+    ]
+
+    return round(
+        sum(scores) / len(scores),
+        2,
+    )
+# ======================================================
+# VERIFY WORKOUT
+# ======================================================
+
+async def verify_workout(image_url):
+        """
+        Downloads the workout screenshot, performs OCR,
+        extracts workout information, and returns the results.
+        """
+
+        # Download image
+        image = await download_image(image_url)
+
+        if image is None:
+            return {
+                "success": False,
+                "reason": "Unable to download image.",
+            }
+
+        # Preprocess image
+        processed = preprocess(image)
+
+        # Run OCR
+        results = reader.readtext(processed)
+
+        # Combine OCR text
+        full_text = " ".join(
+            text
+            for _, text, _ in results
+        )
+
+        # =====================================
+        # DEBUG OUTPUT
+        # =====================================
+
+        print("\n========== OCR ==========")
+        print(full_text)
+        print("=========================\n")
+
+        print("\n========== OCR LINES ==========")
+
+        for _, text, confidence in results:
+            print(f"[{confidence:.2f}] {text}")
+
+        print("===============================\n")
+
+        # =====================================
+        # Extract information
+        # =====================================
+
+        minutes = extract_minutes(results)
+        workout_date = extract_workout_date(results)
+        confidence = calculate_confidence(results)
+
+        # =====================================
+        # More debug info
+        # =====================================
+
+        print(f"Minutes Found      : {minutes}")
+        print(f"Workout Date Found : {workout_date}")
+        print(f"OCR Confidence     : {confidence}")
+
+        # =====================================
+        # Return data
+        # =====================================
+
+        return {
+            "success": minutes is not None,
+            "minutes": minutes,
+            "workout_date": workout_date,
+            "confidence": confidence,
+            "text": full_text,
+            "results": results,
+        }
