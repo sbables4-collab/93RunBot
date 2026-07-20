@@ -3,17 +3,26 @@ from datetime import datetime
 
 import aiohttp
 import cv2
-import easyocr
 import numpy as np
+import easyocr
 
 # ======================================================
 # OCR READER
 # ======================================================
+reader = None
+def get_reader():
+    global reader
 
-reader = easyocr.Reader(
-    ["en"],
-    gpu=False,
-)
+    if reader is None:
+        print("Loading EasyOCR model...")
+        reader = easyocr.Reader(
+            ["en"],
+            gpu=False,
+        )
+
+    return reader
+
+
 
 # ======================================================
 # DOWNLOAD IMAGE
@@ -38,14 +47,37 @@ async def download_image(url: str):
 # ======================================================
 
 def preprocess(image):
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    # Resize large screenshots to reduce memory usage
+    height, width = image.shape[:2]
 
+    MAX_WIDTH = 1200
+
+    if width > MAX_WIDTH:
+        scale = MAX_WIDTH / width
+
+        image = cv2.resize(
+            image,
+            (
+                int(width * scale),
+                int(height * scale),
+            ),
+            interpolation=cv2.INTER_AREA,
+        )
+
+    # Convert to grayscale
+    gray = cv2.cvtColor(
+        image,
+        cv2.COLOR_BGR2GRAY,
+    )
+
+    # Blur slightly to improve OCR
     gray = cv2.GaussianBlur(
         gray,
         (3, 3),
         0,
     )
 
+    # Threshold
     _, thresh = cv2.threshold(
         gray,
         0,
@@ -236,8 +268,7 @@ async def verify_workout(image_url):
         processed = preprocess(image)
 
         # Run OCR
-        results = reader.readtext(processed)
-
+        results = get_reader().readtext(processed)
         # Combine OCR text
         full_text = " ".join(
             text
@@ -248,17 +279,7 @@ async def verify_workout(image_url):
         # DEBUG OUTPUT
         # =====================================
 
-        print("\n========== OCR ==========")
-        print(full_text)
-        print("=========================\n")
-
-        print("\n========== OCR LINES ==========")
-
-        for _, text, confidence in results:
-            print(f"[{confidence:.2f}] {text}")
-
-        print("===============================\n")
-
+        print(f"OCR failed for submission: {image_url}")
         # =====================================
         # Extract information
         # =====================================
